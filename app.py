@@ -1,19 +1,21 @@
 """
 Aplicativo principal (GUI) do sistema de Controle de Estoque e Vendas.
 
-Este arquivo inicializa a aplicação Tkinter, exibe a tela de login e,
-após autenticação, apresenta as abas de Produtos, Vendas e Relatórios.
+Inicializa a aplicação Tkinter, exibe a tela de login e, após autenticação,
+apresenta as abas de Produtos, Vendas, Pedidos e Relatórios.
 
 Requisitos: Python 3.10+
 """
 
 from __future__ import annotations
 
+import os
+import sys
 import tkinter as tk
 from tkinter import ttk, messagebox
 
 from db import Database
-from utils import try_generate_icon
+# Removido: geração automática de ícone; usamos ativos fixos em assets
 from views.login_view import LoginFrame
 from views.product_view import ProductFrame
 from views.sales_view import SalesFrame
@@ -22,13 +24,7 @@ from views.fulfillment_view import FulfillmentFrame
 
 
 class App(tk.Tk):
-    """Classe principal da aplicação.
-
-    Responsável por:
-    - Instanciar a base de dados
-    - Exibir o fluxo de login
-    - Criar e gerenciar as abas principais após autenticação
-    """
+    """Classe principal da aplicação."""
 
     def __init__(self) -> None:
         super().__init__()
@@ -36,44 +32,50 @@ class App(tk.Tk):
         self.geometry("1000x640")
         self.minsize(960, 600)
 
-        # Ícone da janela (opcional): usa ícone pré-gerado, ou gera um simples via Pillow
+        # Ícone da janela (GUI):
+        # - Windows: tenta aplicar um .ico (barra de título / taskbar) via iconbitmap.
+        # - Todas as plataformas: aplica PNG via iconphoto (suporta multi-tamanho com Pillow).
+        # - A logo no cabeçalho também reutiliza o mesmo PNG, redimensionado conforme DPI.
         try:
-            # Preferir ícone gerado pelo script (se existir)
-            import os, sys
             # Em Windows, definir AppUserModelID ajuda a fixar o ícone na barra de tarefas
             if sys.platform == "win32":
                 try:
                     import ctypes  # type: ignore
-                    ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("control_stock.app.1.0")
+                    ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
+                        "control_stock.app.1.0"
+                    )
                 except Exception:
                     pass
 
-            ico = os.path.abspath(os.path.join("data", "icon.ico"))
-            if os.path.exists(ico):
-                self.iconbitmap(ico)  # type: ignore[arg-type]
-            else:
-                icon_path = try_generate_icon()
-                if icon_path:
-                    self.iconbitmap(os.path.abspath(str(icon_path)))  # type: ignore[arg-type]
-            # Fallback PNG (todas as plataformas): carrega múltiplos tamanhos para melhor nitidez
-            try:
-                from PIL import Image, ImageTk  # type: ignore
-                sizes = [16, 24, 32, 48, 64, 128, 256]
-                self._icon_photos = []
-                for s in sizes:
-                    path = os.path.abspath(os.path.join("assets", f"logo_{s}.png"))
-                    if not os.path.exists(path):
-                        continue
-                    im = Image.open(path).convert("RGBA")
-                    self._icon_photos.append(ImageTk.PhotoImage(im))
-                if self._icon_photos:
+            # 1) Se existir ICO, aplica (melhor integração com taskbar do Windows)
+            ico_candidates = [
+                os.path.abspath(os.path.join("assets", "icon.ico")),
+                os.path.abspath(os.path.join("assets", "logo.ico")),
+                os.path.abspath(os.path.join("data", "icon.ico")),
+            ]
+            ico = next((p for p in ico_candidates if os.path.exists(p)), None)
+            if ico:
+                try:
+                    self.iconbitmap(ico)  # type: ignore[arg-type]
+                except Exception:
+                    pass
+            # Se nenhum ICO existir, seguimos apenas com PNG via iconphoto
+
+            # 2) Aplica PNG base em diferentes tamanhos (iconphoto)
+            base_png = os.path.abspath(os.path.join("assets", "logo.png"))
+            if os.path.exists(base_png):
+                try:
+                    from PIL import Image, ImageTk  # type: ignore
+                    sizes = [16, 24, 32, 48, 64, 128, 256]
+                    base_img = Image.open(base_png).convert("RGBA")
+                    self._icon_photos = [
+                        ImageTk.PhotoImage(base_img.copy().resize((s, s))) for s in sizes
+                    ]
                     self.iconphoto(True, *self._icon_photos)
-            except Exception:
-                # Fallback sem Pillow
-                png = os.path.abspath(os.path.join("assets", "logo_small.png"))
-                if os.path.exists(png):
+                except Exception:
+                    # Fallback sem Pillow: usa a própria imagem
                     try:
-                        self._icon_photo = tk.PhotoImage(file=png)
+                        self._icon_photo = tk.PhotoImage(file=base_png)
                         self.iconphoto(True, self._icon_photo)
                     except Exception:
                         pass
@@ -101,47 +103,56 @@ class App(tk.Tk):
         self.show_login()
 
     def _build_header(self) -> None:
-        """Cria uma barra superior com a logo e o título do sistema."""
-        import os
-        bar = ttk.Frame(self)
+        """Cria barra superior com logo e título."""
+        dark_bg = "#2B2B2B"  # cinza escuro para a barra
+        text_fg = "#FFFFFF"  # fonte clara para bom contraste
+        bar = tk.Frame(self, bg=dark_bg, highlightthickness=0, bd=0)
         bar.pack(side=tk.TOP, fill=tk.X)
 
-        # Carrega a logo para a barra com melhor ajuste ao DPI
+        # Carrega a logo com melhor ajuste ao DPI
         self._logo_img = None
         # Estima fator de escala (DPI) do Tk para escolher tamanho adequado
         try:
-            dpi_scale = float(self.winfo_fpixels('1i')) / 72.0
+            dpi_scale = float(self.winfo_fpixels("1i")) / 72.0
         except Exception:
             dpi_scale = 1.0
-        target = 32
         size = 32
         if dpi_scale >= 1.75:
             size = 48
         elif dpi_scale >= 1.25:
             size = 40
-        # Seleciona arquivo mais próximo
+
         candidates = [32, 40, 48, 64]
         pick = min(candidates, key=lambda s: abs(s - size))
+        base_png = os.path.join("assets", "logo.png")
         try:
             from PIL import Image, ImageTk  # type: ignore
-            p = os.path.join("assets", f"logo_{pick if pick in (32,48,64) else 32}.png")
-            if not os.path.exists(p):
-                p = os.path.join("assets", "logo_32.png")
-            if os.path.exists(p):
-                im = Image.open(p).convert("RGBA")
+            if os.path.exists(base_png):
+                im = Image.open(base_png).convert("RGBA")
+                if im.width != pick or im.height != pick:
+                    im = im.resize((pick, pick))
                 self._logo_img = ImageTk.PhotoImage(im)
-                ttk.Label(bar, image=self._logo_img).pack(side=tk.LEFT, padx=(10, 8), pady=6)
+                tk.Label(bar, image=self._logo_img, bg=dark_bg, bd=0).pack(
+                    side=tk.LEFT, padx=(10, 8), pady=6
+                )
         except Exception:
-            p = os.path.join("assets", "logo_32.png")
-            if os.path.exists(p):
-                self._logo_img = tk.PhotoImage(file=p)
-                ttk.Label(bar, image=self._logo_img).pack(side=tk.LEFT, padx=(10, 8), pady=6)
+            # Fallback sem Pillow
+            if os.path.exists(base_png):
+                try:
+                    self._logo_img = tk.PhotoImage(file=base_png)
+                    tk.Label(bar, image=self._logo_img, bg=dark_bg, bd=0).pack(
+                        side=tk.LEFT, padx=(10, 8), pady=6
+                    )
+                except Exception:
+                    pass
 
-        ttk.Label(bar, text="Controle de Estoque e Vendas", font=("Segoe UI", 12, "bold")).pack(
-            side=tk.LEFT, pady=6
-        )
-
-        # (login é mostrado no final do __init__ após menus/atributos)
+        tk.Label(
+            bar,
+            text="Controle de Estoque e Vendas",
+            font=("Segoe UI", 12, "bold"),
+            fg=text_fg,
+            bg=dark_bg,
+        ).pack(side=tk.LEFT, pady=6)
 
     def _build_menubar(self) -> None:
         """Cria a barra de menu da aplicação."""
@@ -196,9 +207,6 @@ class App(tk.Tk):
         self.notebook.add(self.reports_tab, text="Relatórios")
 
         self.notebook.pack(fill=tk.BOTH, expand=True)
-
-        # Feedback rápido
-        messagebox.showinfo("Bem-vindo", f"Login efetuado como: {username}")
 
     def logout(self) -> None:
         """Efetua logout retornando à tela de login."""

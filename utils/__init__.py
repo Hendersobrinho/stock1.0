@@ -1,10 +1,9 @@
-"""
+﻿"""
 Pacote utils: utilitários gerais usados no app.
 
 Inclui:
 - hash de senha didático (sha256 com SALT fixo)
 - conversores/validadores simples (float e int não-negativos)
-- geração opcional de ícone via Pillow
 
 Outros utilitários especializados estão em submódulos:
 - utils.formatting: BRL, percentuais e arredondamento (Decimal)
@@ -15,7 +14,6 @@ Outros utilitários especializados estão em submódulos:
 from __future__ import annotations
 
 import hashlib
-from pathlib import Path
 
 
 _STATIC_SALT = "stock_app_salt_v1"
@@ -48,22 +46,3 @@ def ensure_non_negative_int(value_str: str) -> int:
     if value < 0:
         raise ValueError("Quantidade deve ser maior ou igual a zero")
     return value
-
-
-def try_generate_icon(output_path: str | Path = "data/icon.ico") -> Path | None:
-    """Gera um ícone simples se Pillow estiver instalado. Retorna o caminho ou None."""
-    try:
-        from PIL import Image, ImageDraw  # type: ignore
-    except Exception:
-        return None
-
-    p = Path(output_path)
-    p.parent.mkdir(parents=True, exist_ok=True)
-
-    img = Image.new("RGBA", (64, 64), (33, 150, 243, 255))
-    d = ImageDraw.Draw(img)
-    d.rectangle([8, 8, 56, 56], outline=(255, 255, 255, 255), width=3)
-    d.text((22, 18), "S", fill=(255, 255, 255, 255))
-    img.save(p)
-    return p
-
